@@ -793,7 +793,6 @@ class SchedulerJob(BaseJob):
             active_runs = DagRun.find(
                 dag_id=dag.dag_id,
                 state=State.RUNNING,
-                external_trigger=False,
                 session=session
             )
             # return if already reached maximum active runs and no timeout setting
