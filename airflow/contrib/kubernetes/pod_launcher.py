@@ -83,16 +83,35 @@ class PodLauncher(LoggingMixin):
     def _monitor_pod(self, pod, get_logs):
         # type: (Pod) -> (State, content)
 
+        status = None
         if get_logs:
-            logs = self._client.read_namespaced_pod_log(
-                name=pod.name,
-                namespace=pod.namespace,
-                container='base',
-                follow=True,
-                tail_lines=10,
-                _preload_content=False)
-            for line in logs:
-                self.log.info(line)
+            try:
+                logs = self._client.read_namespaced_pod_log(
+                    name=pod.name,
+                    namespace=pod.namespace,
+                    container='base',
+                    follow=True,
+                    tail_lines=10,
+                    _preload_content=False,
+                    _request_timeout=30
+                )
+
+                for line in logs:
+                    self.log.info(line)
+
+                    # try to get status ASAP. hopefully before node disappear
+                    status = self._task_status(self.read_pod(pod))
+                    if status == State.SUCCESS or status == State.FAILED:
+                        break
+
+            except ApiException as e:
+                # possible timeout error?
+                self.log.debug(str(e))
+
+            finally:
+                if status != State.SUCCESS and status != State.FAILED:
+                    status = self._task_status(self.read_pod(pod))
+
         result = None
         if self.extract_xcom:
             while self.base_container_is_running(pod):
@@ -101,10 +120,13 @@ class PodLauncher(LoggingMixin):
             result = self._extract_xcom(pod)
             self.log.info(result)
             result = json.loads(result)
-        while self.pod_is_running(pod):
+        while self.pod_is_running(pod) and status != State.SUCCESS and status != State.FAILED:
             self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
             time.sleep(2)
-        return (self._task_status(self.read_pod(pod)), result)
+
+        if status != State.SUCCESS and status != State.FAILED:
+            status = self._task_status(self.read_pod(pod))
+        return status, result
 
     def _task_status(self, event):
         self.log.info(
