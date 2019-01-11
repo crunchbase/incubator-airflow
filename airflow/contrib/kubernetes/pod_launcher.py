@@ -104,7 +104,7 @@ class PodLauncher(LoggingMixin):
                         namespace=pod.namespace,
                         container='base',
                         follow=True,
-                        since_seconds=0,
+                        tail_lines=0,
                         async_req=True,
                         _preload_content=False,
                         _request_timeout=5
