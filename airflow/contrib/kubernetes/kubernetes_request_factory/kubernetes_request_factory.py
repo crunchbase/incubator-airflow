@@ -90,6 +90,11 @@ class KubernetesRequestFactory:
             req['spec']['nodeSelector'][k] = v
 
     @staticmethod
+    def extract_tolerations(pod, req):
+        if pod.tolerations:
+            req['spec']['tolerations'] = pod.tolerations
+
+    @staticmethod
     def attach_volumes(pod, req):
         req['spec']['volumes'] = (
             req['spec'].get('volumes', []))
