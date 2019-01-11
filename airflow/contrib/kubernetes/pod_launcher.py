@@ -93,28 +93,29 @@ class PodLauncher(LoggingMixin):
     def _monitor_pod(self, pod, get_logs):
         # type: (Pod) -> (State, content)
 
-        thread = None
-
-        if get_logs:
-            thread = self._client.read_namespaced_pod_log(
-                name=pod.name,
-                namespace=pod.namespace,
-                container='base',
-                follow=True,
-                tail_lines=10,
-                _preload_content=False,
-                async_req=True
-            )
-
         status = self._task_status(self.read_pod(pod))
 
         while status != State.SUCCESS and status != State.FAILED:
             self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
             if get_logs:
-                lines = thread.get()
-                for line in lines:
-                    self.log.info(line)
-            time.sleep(2)
+                try:
+                    thread = self._client.read_namespaced_pod_log(
+                        name=pod.name,
+                        namespace=pod.namespace,
+                        container='base',
+                        follow=True,
+                        tail_lines=10,
+                        async_req=True,
+                        _preload_content=False,
+                        _request_timeout=5
+                    )
+                    lines = thread.get()
+                    for line in lines:
+                        self.log.info(line)
+                except ReadTimeoutError:
+                    self.log.debug("reading log timeout, continue to status check.")
+            else:
+                time.sleep(2)
             status = self._task_status(self.read_pod(pod))
 
         result = None
