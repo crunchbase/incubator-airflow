@@ -17,6 +17,7 @@
 
 import json
 import time
+import logging
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.state import State
 from datetime import datetime as dt
@@ -25,10 +26,12 @@ from airflow.contrib.kubernetes.kubernetes_request_factory import \
 from kubernetes import watch, client
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as kubernetes_stream
-from urllib3.exceptions import ReadTimeoutError
+from urllib3.exceptions import ReadTimeoutError, MaxRetryError
 from airflow import AirflowException
 from requests.exceptions import HTTPError
 from .kube_client import get_kube_client
+
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 
 class PodStatus(object):
@@ -112,7 +115,7 @@ class PodLauncher(LoggingMixin):
                     lines = thread.get()
                     for line in lines:
                         self.log.info(line)
-                except ReadTimeoutError:
+                except MaxRetryError:
                     self.log.debug("reading log timeout, continue to status check.")
             else:
                 time.sleep(2)
