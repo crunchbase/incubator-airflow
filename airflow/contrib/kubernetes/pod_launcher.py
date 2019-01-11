@@ -115,7 +115,7 @@ class PodLauncher(LoggingMixin):
                     lines = thread.get()
                     for line in lines:
                         self.log.info(line)
-                except MaxRetryError:
+                except (TimeoutError, MaxRetryError):
                     self.log.debug("reading log timeout, continue to status check.")
             else:
                 time.sleep(2)
