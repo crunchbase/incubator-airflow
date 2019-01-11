@@ -93,7 +93,7 @@ class PodLauncher(LoggingMixin):
     def _monitor_pod(self, pod, get_logs):
         # type: (Pod) -> (State, content)
 
-        thread, status = None, None
+        thread = None
 
         if get_logs:
             thread = self._client.read_namespaced_pod_log(
@@ -106,11 +106,16 @@ class PodLauncher(LoggingMixin):
                 async_req=True
             )
 
-        while self.pod_is_running(pod) and status != State.SUCCESS and status != State.FAILED:
+        status = self._task_status(self.read_pod(pod))
+
+        while status != State.SUCCESS and status != State.FAILED:
             self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
             if get_logs:
-                self.log.info(thread.get())
+                lines = thread.get()
+                for line in lines:
+                    self.log.info(line)
             time.sleep(2)
+            status = self._task_status(self.read_pod(pod))
 
         result = None
         if self.extract_xcom:
@@ -121,8 +126,6 @@ class PodLauncher(LoggingMixin):
             self.log.info(result)
             result = json.loads(result)
 
-        if status != State.SUCCESS and status != State.FAILED:
-            status = self._task_status(self.read_pod(pod))
         return status, result
 
     def _task_status(self, event):
