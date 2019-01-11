@@ -25,6 +25,7 @@ from airflow.contrib.kubernetes.kubernetes_request_factory import \
 from kubernetes import watch, client
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as kubernetes_stream
+from urllib3.exceptions import ReadTimeoutError
 from airflow import AirflowException
 from requests.exceptions import HTTPError
 from .kube_client import get_kube_client
@@ -92,34 +93,24 @@ class PodLauncher(LoggingMixin):
     def _monitor_pod(self, pod, get_logs):
         # type: (Pod) -> (State, content)
 
-        status = None
+        thread, status = None, None
+
         if get_logs:
-            try:
-                logs = self._client.read_namespaced_pod_log(
-                    name=pod.name,
-                    namespace=pod.namespace,
-                    container='base',
-                    follow=True,
-                    tail_lines=10,
-                    _preload_content=False,
-                    _request_timeout=5
-                )
+            thread = self._client.read_namespaced_pod_log(
+                name=pod.name,
+                namespace=pod.namespace,
+                container='base',
+                follow=True,
+                tail_lines=10,
+                _preload_content=False,
+                async_req=True
+            )
 
-                for line in logs:
-                    self.log.info(line)
-
-                    # try to get status ASAP. hopefully before node disappear
-                    status = self._task_status(self.read_pod(pod))
-                    if status == State.SUCCESS or status == State.FAILED:
-                        break
-
-            except ApiException as e:
-                # possible timeout error?
-                self.log.debug(str(e))
-
-            finally:
-                if status != State.SUCCESS and status != State.FAILED:
-                    status = self._task_status(self.read_pod(pod))
+        while self.pod_is_running(pod) and status != State.SUCCESS and status != State.FAILED:
+            self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
+            if get_logs:
+                self.log.info(thread.get())
+            time.sleep(2)
 
         result = None
         if self.extract_xcom:
@@ -129,9 +120,6 @@ class PodLauncher(LoggingMixin):
             result = self._extract_xcom(pod)
             self.log.info(result)
             result = json.loads(result)
-        while self.pod_is_running(pod) and status != State.SUCCESS and status != State.FAILED:
-            self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
-            time.sleep(2)
 
         if status != State.SUCCESS and status != State.FAILED:
             status = self._task_status(self.read_pod(pod))
