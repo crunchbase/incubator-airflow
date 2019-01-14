@@ -32,6 +32,7 @@ from requests.exceptions import HTTPError
 from .kube_client import get_kube_client
 
 logging.getLogger("urllib3").setLevel(logging.ERROR)
+logging.getLogger("kubernetes").setLevel(logging.ERROR)
 
 
 class PodStatus(object):
