@@ -5404,3 +5404,9 @@ class KubeWorkerIdentifier(Base):
                 KubeWorkerIdentifier.worker_uuid: worker_uuid
             })
             session.commit()
+
+
+class PodInstance(Base):
+    __tablename__ = "pod_instances"
+    pod_name = Column(Text, primary_key=True)
+    pod_state = Column(String(20), default=State.RUNNING)

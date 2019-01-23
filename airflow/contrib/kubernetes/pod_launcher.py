@@ -21,8 +21,10 @@ import logging
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.state import State
 from datetime import datetime as dt
+from airflow.settings import Session
 from airflow.contrib.kubernetes.kubernetes_request_factory import \
     pod_request_factory as pod_factory
+from airflow.models import PodInstance
 from kubernetes import watch, client
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream as kubernetes_stream
@@ -82,19 +84,31 @@ class PodLauncher(LoggingMixin):
             startup_timeout (int): Timeout for startup of the pod (if pod is pending for
              too long, considers task a failure
         """
-        resp = self.run_pod_async(pod)
-        curr_time = dt.now()
-        if resp.status.start_time is None:
-            while self.pod_not_started(pod):
-                delta = dt.now() - curr_time
-                if delta.seconds >= startup_timeout:
-                    raise AirflowException("Pod took too long to start")
-                time.sleep(1)
-            self.log.debug('Pod not yet started')
+        session = Session()
+        try:
+            pod = PodInstance(pod_name=pod.name)
+            session.add(pod)
+            session.commit()
 
-        return self._monitor_pod(pod, get_logs)
+            resp = self.run_pod_async(pod)
+            curr_time = dt.now()
+            if resp.status.start_time is None:
+                while self.pod_not_started(pod):
+                    delta = dt.now() - curr_time
+                    if delta.seconds >= startup_timeout:
+                        raise AirflowException("Pod took too long to start")
+                    time.sleep(1)
+                self.log.debug('Pod not yet started')
+            status = self._monitor_pod(session, pod, get_logs)
+            return status
+        finally:
+            session.close()
 
-    def _monitor_pod(self, pod, get_logs):
+    def _task_in_db(self, session, pod):
+        pod_instance = session.query(PodInstance).where(PodInstance.pod_name == pod.name).first()
+        return pod_instance
+
+    def _monitor_pod(self, session, pod, get_logs):
         # type: (Pod) -> (State, content)
 
         status = self._task_status(self.read_pod(pod))
@@ -103,24 +117,38 @@ class PodLauncher(LoggingMixin):
             self.log.info('Pod %s has state %s', pod.name, State.RUNNING)
             if get_logs:
                 try:
-                    thread = self._client.read_namespaced_pod_log(
+                    logs = self._client.read_namespaced_pod_log(
                         name=pod.name,
                         namespace=pod.namespace,
                         container='base',
                         follow=True,
                         tail_lines=0,
-                        async_req=True,
                         _preload_content=False,
                         _request_timeout=5
                     )
-                    lines = thread.get()
-                    for line in lines:
+                    for line in logs:
                         self.log.info(line)
                 except (ReadTimeoutError, MaxRetryError):
                     self.log.debug("reading log timeout, continue to status check.")
+                    time.sleep(2)
             else:
                 time.sleep(2)
-            status = self._task_status(self.read_pod(pod))
+            try:
+                status = self._task_status(self.read_pod(pod))
+            except ApiException:
+                # If API failed to get info -> default task failed
+                status = State.FAILED
+            pg_task = self._task_in_db(session, pod)
+            pg_status = pg_task.pod_state
+            if pg_status != status:
+                # if api status != status from pg and pg_status in SUCCESS or FAILED -> pg has higher priority
+                # otherwise, api status still keep the status.
+                status = pg_status if pg_status in (State.SUCCESS, State.FAILED) else status
+            else:
+                if status in (State.SUCCESS, State.FAILED):
+                    # api return success or fail -> update postgres status
+                    pg_task.pod_state = status
+                    session.commit()
 
         result = None
         if self.extract_xcom:
