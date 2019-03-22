@@ -84,7 +84,13 @@ class S3TaskHandler(FileTaskHandler, LoggingMixin):
             # read log and remove old logs to get just the latest additions
             with open(local_loc, 'r') as logfile:
                 log = logfile.read()
-            self.s3_write(log, remote_loc)
+
+            try:
+                self.s3_write(log, remote_loc)
+            except Exception:
+                self.log.exception('Could not write logs to %s', remote_loc)
+            else:
+                os.remove(local_loc)
 
         # Mark closed so we don't double write if close is called twice
         self.closed = True
