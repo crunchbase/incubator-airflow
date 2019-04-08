@@ -17,6 +17,7 @@
 
 import json
 import time
+import backoff
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.state import State
 from datetime import datetime as dt
@@ -136,6 +137,12 @@ class PodLauncher(LoggingMixin):
                                   event.status.container_statuses)), None)
         return status.state.running is not None
 
+    @backoff.on_exception(
+        wait_gen=backoff.constant,
+        exception=AirflowException,
+        max_tries=30,
+        interval=10
+    )
     def read_pod(self, pod):
         try:
             return self._client.read_namespaced_pod(pod.name, pod.namespace)
