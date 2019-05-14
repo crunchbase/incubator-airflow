@@ -84,6 +84,7 @@ class PodLauncher(LoggingMixin):
             while self.pod_not_started(pod):
                 delta = dt.now() - curr_time
                 if delta.seconds >= startup_timeout:
+                    self.delete_pod(pod)
                     raise AirflowException("Pod took too long to start")
                 time.sleep(1)
             self.log.debug('Pod not yet started')
