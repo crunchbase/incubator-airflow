@@ -21,7 +21,6 @@ metadata:
 data:
   airflow.cfg: |
     [core]
-    airflow_home = /root/airflow
     dags_folder = {{CONFIGMAP_DAGS_FOLDER}}
     base_log_folder = /root/airflow/logs
     logging_level = INFO
@@ -213,6 +212,10 @@ data:
     # The worker pods will be scheduled to the nodes of the specified key-value pairs.
     # Should be supplied in the format: key = value
 
+    [kubernetes_annotations]
+    # The Key-value annotations pairs to be given to worker pods.
+    # Should be supplied in the format: key = value
+
     [kubernetes_secrets]
     SQL_ALCHEMY_CONN = airflow-secrets=sql_alchemy_conn
 
@@ -272,6 +275,10 @@ data:
 
     # Default queue that tasks get assigned to and that worker listen on.
     default_queue = default
+
+    # How many processes CeleryExecutor uses to sync task state.
+    # 0 means to use max(1, number of cores - 1) processes.
+    sync_parallelism = 0
 
     # Import path for celery configuration options
     celery_config_options = airflow.config_templates.default_celery.DEFAULT_CELERY_CONFIG
@@ -379,4 +386,4 @@ data:
     hide_sensitive_variable_fields = True
 
     [elasticsearch]
-    elasticsearch_host =
+    host =

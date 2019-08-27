@@ -33,7 +33,7 @@ class AWSBatchOperator(BaseOperator):
     """
     Execute a job on AWS Batch Service
 
-    .. warning: the queue parameter was renamed to job_queue to segreggate the
+    .. warning: the queue parameter was renamed to job_queue to segregate the
                 internal CeleryExecutor queue from the AWS Batch internal queue.
 
     :param job_name: the name for the job that will run on AWS Batch
@@ -154,17 +154,19 @@ class AWSBatchOperator(BaseOperator):
             raise AirflowException('No job found for {}'.format(response))
 
         for job in response['jobs']:
-            if 'attempts' in job:
-                containers = job['attempts']
-                for container in containers:
-                    if (job['status'] == 'FAILED' or
-                            container['container']['exitCode'] != 0):
-                        raise AirflowException(
-                            'This containers encounter an error during '
-                            'execution {}'.format(job))
-            elif job['status'] is not 'SUCCEEDED':
+            job_status = job['status']
+            if job_status == 'FAILED':
+                reason = job['statusReason']
+                raise AirflowException('Job failed with status {}'.format(reason))
+            elif job_status in [
+                'SUBMITTED',
+                'PENDING',
+                'RUNNABLE',
+                'STARTING',
+                'RUNNING'
+            ]:
                 raise AirflowException(
-                    'This task is still pending {}'.format(job['status']))
+                    'This task is still pending {}'.format(job_status))
 
     def get_hook(self):
         return AwsHook(

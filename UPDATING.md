@@ -22,10 +22,247 @@ under the License.
 This file documents any backwards-incompatible changes in Airflow and
 assists users migrating to a new version.
 
+## Airflow 1.10.4
+
+### Python 2 support is going away
+
+Airflow 1.10 will be the last release series to support Python 2. Airflow 2.0.0 will only support Python 3.5 and up.
+
+If you have a specific task that still requires Python 2 then you can use the PythonVirtualenvOperator for this.
+
+### Changes to DatastoreHook
+* removed argument `version` from `get_conn` function and added it to the hook's `__init__` function instead and renamed it to `api_version`
+* renamed the `partialKeys` argument of function `allocate_ids` to `partial_keys`
+
+### Changes to GoogleCloudStorageHook
+
+* the discovery-based api (`googleapiclient.discovery`) used in `GoogleCloudStorageHook` is now replaced by the recommended client based api (`google-cloud-storage`). To know the difference between both the libraries, read https://cloud.google.com/apis/docs/client-libraries-explained. PR: [#5054](https://github.com/apache/airflow/pull/5054) 
+* as a part of this replacement, the `multipart` & `num_retries` parameters for `GoogleCloudStorageHook.upload` method have been deprecated.
+  
+  The client library uses multipart upload automatically if the object/blob size is more than 8 MB - [source code](https://github.com/googleapis/google-cloud-python/blob/11c543ce7dd1d804688163bc7895cf592feb445f/storage/google/cloud/storage/blob.py#L989-L997). The client also handles retries automatically
+
+* the `generation` parameter is deprecated in `GoogleCloudStorageHook.delete` and `GoogleCloudStorageHook.insert_object_acl`. 
+
+Updating to `google-cloud-storage >= 1.16` changes the signature of the upstream `client.get_bucket()` method from `get_bucket(bucket_name: str)` to `get_bucket(bucket_or_name: Union[str, Bucket])`. This method is not directly exposed by the airflow hook, but any code accessing the connection directly (`GoogleCloudStorageHook().get_conn().get_bucket(...)` or similar) will need to be updated.
+
+### Changes in writing Logs to Elasticsearch
+
+The `elasticsearch_` prefix has been removed from all config items under the `[elasticsearch]` section. For example `elasticsearch_host` is now just `host`.
+
+### Removal of `non_pooled_task_slot_count` and `non_pooled_backfill_task_slot_count`
+
+`non_pooled_task_slot_count` and `non_pooled_backfill_task_slot_count`
+are removed in favor of a real pool, e.g. `default_pool`.
+
+By default tasks are running in `default_pool`.
+`default_pool` is initialized with 128 slots and user can change the
+number of slots through UI/CLI. `default_pool` cannot be removed.
+
+### `pool` config option in Celery section to support different Celery pool implementation
+
+The new `pool` config option allows users to choose different pool
+implementation. Default value is "prefork", while choices include "prefork" (default),
+"eventlet", "gevent" or "solo". This may help users achieve better concurrency performance
+in different scenarios.
+
+For more details about Celery pool implementation, please refer to:
+- https://docs.celeryproject.org/en/latest/userguide/workers.html#concurrency
+- https://docs.celeryproject.org/en/latest/userguide/concurrency/eventlet.html
+
+## Airflow 1.10.3
+
+### RedisPy dependency updated to v3 series
+If you are using the Redis Sensor or Hook you may have to update your code. See
+[redis-py porting instructions] to check if your code might be affected (MSET,
+MSETNX, ZADD, and ZINCRBY all were, but read the full doc).
+
+[redis-py porting instructions]: https://github.com/andymccurdy/redis-py/tree/3.2.0#upgrading-from-redis-py-2x-to-30
+
+### SLUGIFY_USES_TEXT_UNIDECODE or AIRFLOW_GPL_UNIDECODE no longer required
+
+It is no longer required to set one of the environment variables to avoid
+a GPL dependency. Airflow will now always use text-unidecode if unidecode
+was not installed before.
+
+### new `sync_parallelism` config option in celery section
+
+The new `sync_parallelism` config option will control how many processes CeleryExecutor will use to
+fetch celery task state in parallel. Default value is max(1, number of cores - 1)
+
+### Rename of BashTaskRunner to StandardTaskRunner
+
+BashTaskRunner has been renamed to StandardTaskRunner. It is the default task runner
+so you might need to update your config.
+
+`task_runner = StandardTaskRunner`
+
+### Modification to config file discovery
+
+If the `AIRFLOW_CONFIG` environment variable was not set and the
+`~/airflow/airflow.cfg` file existed, airflow previously used
+`~/airflow/airflow.cfg` instead of `$AIRFLOW_HOME/airflow.cfg`. Now airflow
+will discover its config file using the `$AIRFLOW_CONFIG` and `$AIRFLOW_HOME`
+environment variables rather than checking for the presence of a file.
+
+### New `dag_discovery_safe_mode` config option
+
+If `dag_discovery_safe_mode` is enabled, only check files for DAGs if
+they contain the strings "airflow" and "DAG". For backwards
+compatibility, this option is enabled by default.
+
+### Changes in Google Cloud Platform related operators
+
+Most GCP-related operators have now optional `PROJECT_ID` parameter. In case you do not specify it,
+the project id configured in
+[GCP Connection](https://airflow.apache.org/howto/manage-connections.html#connection-type-gcp) is used.
+There will be an `AirflowException` thrown in case `PROJECT_ID` parameter is not specified and the
+connection used has no project id defined. This change should be  backwards compatible as earlier version
+of the operators had `PROJECT_ID` mandatory.
+
+Operators involved:
+
+  * GCP Compute Operators
+    * GceInstanceStartOperator
+    * GceInstanceStopOperator
+    * GceSetMachineTypeOperator
+  * GCP Function Operators
+    * GcfFunctionDeployOperator
+  * GCP Cloud SQL Operators
+    * CloudSqlInstanceCreateOperator
+    * CloudSqlInstancePatchOperator
+    * CloudSqlInstanceDeleteOperator
+    * CloudSqlInstanceDatabaseCreateOperator
+    * CloudSqlInstanceDatabasePatchOperator
+    * CloudSqlInstanceDatabaseDeleteOperator
+
+Other GCP operators are unaffected.
+
+### Changes in Google Cloud Platform related hooks
+
+The change in GCP operators implies that GCP Hooks for those operators require now keyword parameters rather
+than positional ones in all methods where `project_id` is used. The methods throw an explanatory exception
+in case they are called using positional parameters.
+
+Hooks involved:
+
+  * GceHook
+  * GcfHook
+  * CloudSqlHook
+
+Other GCP hooks are unaffected.
+
+### Changed behaviour of using default value when accessing variables
+It's now possible to use `None` as a default value with the `default_var` parameter when getting a variable, e.g.
+
+```python
+foo = Variable.get("foo", default_var=None)
+if foo is None:
+    handle_missing_foo()
+```
+
+(Note: there is already `Variable.setdefault()` which me be helpful in some cases.)
+
+This changes the behaviour if you previously explicitly provided `None` as a default value. If your code expects a `KeyError` to be thrown, then don't pass the `default_var` argument.
+
+### Removal of `airflow_home` config setting
+
+There were previously two ways of specifying the Airflow "home" directory
+(`~/airflow` by default): the `AIRFLOW_HOME` environment variable, and the
+`airflow_home` config setting in the `[core]` section.
+
+If they had two different values different parts of the code base would end up
+with different values. The config setting has been deprecated, and you should
+remove the value from the config file and set `AIRFLOW_HOME` environment
+variable if you need to use a non default value for this.
+
+(Since this setting is used to calculate what config file to load, it is not
+possible to keep just the config option)
+
+### Change of two methods signatures in `GCPTransferServiceHook`
+
+The signature of the `create_transfer_job` method in `GCPTransferServiceHook`
+class has changed. The change does not change the behavior of the method.
+
+Old signature:
+```python
+def create_transfer_job(self, description, schedule, transfer_spec, project_id=None):
+```
+New signature:
+```python
+def create_transfer_job(self, body):
+```
+
+It is necessary to rewrite calls to method. The new call looks like this:
+```python
+body = {
+  'status': 'ENABLED',
+  'projectId': project_id,
+  'description': description,
+  'transferSpec': transfer_spec,
+  'schedule': schedule,
+}
+gct_hook.create_transfer_job(body)
+```
+The change results from the unification of all hooks and adjust to
+[the official recommendations](https://lists.apache.org/thread.html/e8534d82be611ae7bcb21ba371546a4278aad117d5e50361fd8f14fe@%3Cdev.airflow.apache.org%3E)
+for the Google Cloud Platform.
+
+The signature of `wait_for_transfer_job` method in `GCPTransferServiceHook` has changed.
+
+Old signature:
+```python
+def wait_for_transfer_job(self, job):
+```
+New signature:
+```python
+def wait_for_transfer_job(self, job, expected_statuses=(GcpTransferOperationStatus.SUCCESS, )):
+```
+
+The behavior of `wait_for_transfer_job` has changed:
+
+Old behavior:
+
+`wait_for_transfer_job` would wait for the SUCCESS status in specified jobs operations.
+
+New behavior:
+
+You can now specify an array of expected statuses. `wait_for_transfer_job` now waits for any of them.
+
+The default value of `expected_statuses` is SUCCESS so that change is backwards compatible.
+
+### Moved two classes to different modules
+
+The class `GoogleCloudStorageToGoogleCloudStorageTransferOperator` has been moved from
+`airflow.contrib.operators.gcs_to_gcs_transfer_operator` to `airflow.contrib.operators.gcp_transfer_operator`
+
+the class `S3ToGoogleCloudStorageTransferOperator` has been moved from
+`airflow.contrib.operators.s3_to_gcs_transfer_operator` to `airflow.contrib.operators.gcp_transfer_operator`
+
+The change was made to keep all the operators related to GCS Transfer Services in one file.
+
+The previous imports will continue to work until Airflow 2.0
+
+### Fixed typo in --driver-class-path in SparkSubmitHook
+
+The `driver_classapth` argument  to SparkSubmit Hook and Operator was
+generating `--driver-classpath` on the spark command line, but this isn't a
+valid option to spark.
+
+The argument has been renamed to `driver_class_path`  and  the option it
+generates has been fixed.
+
 ## Airflow 1.10.2
 
+### DAG level Access Control for new RBAC UI
+
+Extend and enhance new Airflow RBAC UI to support DAG level ACL. Each dag now has two permissions(one for write, one for read) associated('can_dag_edit', 'can_dag_read').
+The admin will create new role, associate the dag permission with the target dag and assign that role to users. That user can only access / view the certain dags on the UI
+that he has permissions on. If a new role wants to access all the dags, the admin could associate dag permissions on an artificial view(``all_dags``) with that role.
+
+We also provide a new cli command(``sync_perm``) to allow admin to auto sync permissions.
+
 ### Modification to `ts_nodash` macro
-`ts_nodash` previously contained TimeZone information alongwith execution date. For Example: `20150101T000000+0000`. This is not user-friendly for file or folder names which was a popular use case for `ts_nodash`. Hence this behavior has been changed and using `ts_nodash` will no longer contain TimeZone information, restoring the pre-1.10 behavior of this macro. And a new macro `ts_nodash_with_tz` has been added which can be used to get a string with execution date and timezone info without dashes. 
+`ts_nodash` previously contained TimeZone information along with execution date. For Example: `20150101T000000+0000`. This is not user-friendly for file or folder names which was a popular use case for `ts_nodash`. Hence this behavior has been changed and using `ts_nodash` will no longer contain TimeZone information, restoring the pre-1.10 behavior of this macro. And a new macro `ts_nodash_with_tz` has been added which can be used to get a string with execution date and timezone info without dashes.
 
 Examples:
   * `ts_nodash`: `20150101T000000`
@@ -68,6 +305,30 @@ then you need to change it like this
     @property
     def is_active(self):
       return self.active
+      
+### Support autodetected schemas to GoogleCloudStorageToBigQueryOperator
+
+GoogleCloudStorageToBigQueryOperator is now support schema auto-detection is available when you load data into BigQuery. Unfortunately, changes can be required.
+
+If BigQuery tables are created outside of airflow and the schema is not defined in the task, multiple options are available:
+
+define a schema_fields:
+
+    gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+      ...
+      schema_fields={...})
+      
+or define a schema_object:
+
+    gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+      ...
+      schema_object='path/to/schema/object)
+
+or enabled autodetect of schema:
+
+    gcs_to_bq.GoogleCloudStorageToBigQueryOperator(
+      ...
+      autodetect=True)
 
 ## Airflow 1.10.1
 
@@ -75,11 +336,6 @@ then you need to change it like this
 
 The DAG parsing manager log now by default will be log into a file, where its location is
 controlled by the new `dag_processor_manager_log_location` config option in core section.
-
-### new `sync_parallelism` config option in celery section
-
-The new `sync_parallelism` config option will control how many processes CeleryExecutor will use to
-fetch celery task state in parallel. Default value is max(1, number of cores - 1)
 
 ### StatsD Metrics
 
