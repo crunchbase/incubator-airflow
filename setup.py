@@ -18,7 +18,6 @@
 # under the License.
 """Setup for the Airflow library."""
 
-
 from setuptools import setup, find_packages, Command
 
 import imp
@@ -257,8 +256,7 @@ webhdfs = ['hdfs[dataframe,avro,kerberos]>=2.0.4']
 winrm = ['pywinrm==0.2.2']
 zendesk = ['zdesk']
 
-all_dbs = postgres + mysql + hive + mssql + hdfs + vertica + cloudant + druid + pinot \
-    + cassandra + mongo
+all_dbs = postgres + mysql + hive + mssql + hdfs + vertica + cloudant + druid + pinot + cassandra + mongo
 
 devel = [
     'beautifulsoup4~=4.7.1',
@@ -301,13 +299,7 @@ devel_all = (sendgrid + devel + all_dbs + doc + samba + s3 + slack + crypto + or
              atlas + azure_container_instances + cgroups + virtualenv)
 
 # Snakebite & Google Cloud Dataflow are not Python 3 compatible :'(
-if PY3:
-    devel_all = [package for package in devel_all if package not in
-                 ['snakebite>=2.7.8', 'snakebite[kerberos]>=2.7.8']]
-    devel_ci = devel_all
-
-else:
-    devel_ci = devel_all + ['unittest2']
+devel_ci = [package for package in devel_all if package not in ['snakebite>=2.7.8', 'snakebite[kerberos]>=2.7.8']]
 
 
 def do_setup():
@@ -333,7 +325,6 @@ def do_setup():
             'croniter>=0.3.17, <0.4',
             'dill>=0.2.2, <0.3',
             'dumb-init>=1.2.2',
-            'enum34~=1.1.6;python_version<"3.4"',
             'flask>=1.1.0, <2.0',
             'flask-appbuilder>=1.12.5, <2.0.0',
             'flask-admin==1.5.3',
