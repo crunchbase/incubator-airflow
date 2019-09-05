@@ -32,8 +32,7 @@ import unittest
 logger = logging.getLogger(__name__)
 
 # noinspection PyUnresolvedReferences
-version = imp.load_source(
-    'airflow.version', os.path.join('airflow', 'version.py')).version
+version = imp.load_source('airflow.version', os.path.join('airflow', 'version.py')).version  # type: ignore
 
 PY3 = sys.version_info[0] == 3
 
@@ -63,7 +62,7 @@ class CleanCommand(Command):
     """
 
     description = "Tidy up the project root"
-    user_options = []
+    user_options = []  # type: ignore
 
     def initialize_options(self):
         """Set default values for options."""
@@ -84,7 +83,7 @@ class CompileAssets(Command):
     """
 
     description = "Compile and build the frontend assets"
-    user_options = []
+    user_options = []  # type: ignore
 
     def initialize_options(self):
         """Set default values for options."""
@@ -160,6 +159,7 @@ celery = [
     'celery~=4.3',
     'flower>=0.7.3, <1.0',
     'tornado>=4.2.0, <6.0',  # Dep of flower. Pin to a version that works on Py3.5.2
+    'kombu==4.6.3'
 ]
 cgroups = [
     'cgroupspy>=0.1.4',
@@ -176,7 +176,8 @@ doc = [
     'sphinx-argparse>=0.1.13',
     'sphinx-autoapi==1.0.0',
     'sphinx-rtd-theme>=0.1.6',
-    'sphinx>=1.2.3',
+    'sphinx>=2.1.2;python_version>="3.0"',
+    'sphinx==1.8.5;python_version<"3.0"',
     'sphinxcontrib-httpdomain>=1.7.0',
 ]
 docker = ['docker~=3.0']
@@ -262,7 +263,6 @@ all_dbs = postgres + mysql + hive + mssql + hdfs + vertica + cloudant + druid + 
 devel = [
     'beautifulsoup4~=4.7.1',
     'click==6.7',
-    'codecov',
     'contextdecorator;python_version<"3.4"',
     'flake8>=3.6.0',
     'flake8-colors',
@@ -277,11 +277,13 @@ devel = [
     'nose-timer',
     'parameterized',
     'paramiko',
+    'pre-commit',
     'pysftp',
     'pywinrm',
     'qds-sdk>=1.9.6',
     'rednose',
     'requests_mock',
+    'yamllint'
 ]
 
 if PY3:

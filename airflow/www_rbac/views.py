@@ -2201,7 +2201,7 @@ class VariableModelView(AirflowModelView):
     base_permissions = ['can_add', 'can_list', 'can_edit', 'can_delete', 'can_varimport']
 
     list_columns = ['key', 'val', 'is_encrypted']
-    add_columns = ['key', 'val', 'is_encrypted']
+    add_columns = ['key', 'val']
     edit_columns = ['key', 'val']
     search_columns = ['key', 'val']
 
@@ -2249,6 +2249,7 @@ class VariableModelView(AirflowModelView):
 
         response = make_response(json.dumps(var_dict, sort_keys=True, indent=4))
         response.headers["Content-Disposition"] = "attachment; filename=variables.json"
+        response.headers["Content-Type"] = "application/json; charset=utf-8"
         return response
 
     @expose('/varimport', methods=["POST"])

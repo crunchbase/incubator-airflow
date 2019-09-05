@@ -80,6 +80,28 @@ class WorkerConfiguration(LoggingMixin):
                 'value': self.kube_config.git_password
             })
 
+        if self.kube_config.git_sync_credentials_secret:
+            init_environment.extend([
+                {
+                    'name': 'GIT_SYNC_USERNAME',
+                    'valueFrom': {
+                        'secretKeyRef': {
+                            'name': self.kube_config.git_sync_credentials_secret,
+                            'key': 'GIT_SYNC_USERNAME'
+                        }
+                    }
+                },
+                {
+                    'name': 'GIT_SYNC_PASSWORD',
+                    'valueFrom': {
+                        'secretKeyRef': {
+                            'name': self.kube_config.git_sync_credentials_secret,
+                            'key': 'GIT_SYNC_PASSWORD'
+                        }
+                    }
+                }
+            ])
+
         volume_mounts = [{
             'mountPath': self.kube_config.git_sync_root,
             'name': self.dags_volume_name,
@@ -122,13 +144,19 @@ class WorkerConfiguration(LoggingMixin):
                 'value': 'false'
             })
 
-        return [{
+        init_containers = [{
             'name': self.kube_config.git_sync_init_container_name,
             'image': self.kube_config.git_sync_container,
-            'securityContext': {'runAsUser': 65533},  # git-sync user
             'env': init_environment,
             'volumeMounts': volume_mounts
         }]
+
+        if self.kube_config.git_sync_run_as_user != "":
+            init_containers[0]['securityContext'] = {
+                'runAsUser': self.kube_config.git_sync_run_as_user  # git-sync user
+            }
+
+        return init_containers
 
     def _get_environment(self):
         """Defines any necessary environment variables for the pod executor"""

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -16,5 +14,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+---
+extends: default
 
-["/bin/bash", "-c", "/bin/sleep 30; /bin/mv {{params.source_location}}/{{ ti.xcom_pull('view_file') }} {{params.target_location}}; /bin/echo '{{params.target_location}}/{{ ti.xcom_pull('view_file') }}';"]
+rules:
+  line-length:
+    max: 110

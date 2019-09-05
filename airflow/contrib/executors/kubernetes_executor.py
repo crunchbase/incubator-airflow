@@ -27,6 +27,8 @@ from uuid import uuid4
 import kubernetes
 from kubernetes import watch, client
 from kubernetes.client.rest import ApiException
+from urllib3.exceptions import HTTPError
+
 from airflow.configuration import conf
 from airflow.contrib.kubernetes.pod_launcher import PodLauncher
 from airflow.contrib.kubernetes.kube_client import get_kube_client
@@ -189,6 +191,8 @@ class KubeConfig:
         self.git_ssh_key_secret_name = conf.get(self.kubernetes_section, 'git_ssh_key_secret_name')
         self.git_ssh_known_hosts_configmap_name = conf.get(self.kubernetes_section,
                                                            'git_ssh_known_hosts_configmap_name')
+        self.git_sync_credentials_secret = conf.get(self.kubernetes_section,
+                                                    'git_sync_credentials_secret')
 
         # NOTE: The user may optionally use a volume claim to mount a PV containing
         # DAGs directly
@@ -242,6 +246,8 @@ class KubeConfig:
 
         self.git_sync_init_container_name = conf.get(
             self.kubernetes_section, 'git_sync_init_container_name')
+
+        self.git_sync_run_as_user = self._get_security_context_val('git_sync_run_as_user')
 
         # The worker pod may optionally have a  valid Airflow config loaded via a
         # configmap
@@ -321,8 +327,8 @@ class KubernetesJobWatcher(multiprocessing.Process, LoggingMixin, object):
                 self.log.exception('Unknown error in KubernetesJobWatcher. Failing')
                 raise
             else:
-                self.log.warn('Watch died gracefully, starting back up with: '
-                              'last resource_version: %s', self.resource_version)
+                self.log.warning('Watch died gracefully, starting back up with: '
+                                 'last resource_version: %s', self.resource_version)
 
     def _run(self, kube_client, resource_version, worker_uuid, kube_config):
         self.log.info(
@@ -335,7 +341,7 @@ class KubernetesJobWatcher(multiprocessing.Process, LoggingMixin, object):
         if resource_version:
             kwargs['resource_version'] = resource_version
         if kube_config.kube_client_request_args:
-            for key, value in kube_config.kube_client_request_args.iteritems():
+            for key, value in kube_config.kube_client_request_args.items():
                 kwargs[key] = value
 
         last_resource_version = None
@@ -386,7 +392,7 @@ class KubernetesJobWatcher(multiprocessing.Process, LoggingMixin, object):
         elif status == 'Running':
             self.log.info('Event: %s is Running', pod_id)
         else:
-            self.log.warn(
+            self.log.warning(
                 'Event: Invalid state: %s on pod: %s with labels: %s with '
                 'resource_version: %s', status, pod_id, labels, resource_version
             )
@@ -586,14 +592,14 @@ class AirflowKubernetesScheduler(LoggingMixin):
         try:
             try_num = int(labels.get('try_number', '1'))
         except ValueError:
-            self.log.warn("could not get try_number as an int: %s", labels.get('try_number', '1'))
+            self.log.warning("could not get try_number as an int: %s", labels.get('try_number', '1'))
 
         try:
             dag_id = labels['dag_id']
             task_id = labels['task_id']
             ex_time = self._label_safe_datestring_to_datetime(labels['execution_date'])
         except Exception as e:
-            self.log.warn(
+            self.log.warning(
                 'Error while retrieving labels; labels: %s; exception: %s',
                 labels, e
             )
@@ -622,7 +628,7 @@ class AirflowKubernetesScheduler(LoggingMixin):
                     dag_id = task.dag_id
                     task_id = task.task_id
                     return (dag_id, task_id, ex_time, try_num)
-        self.log.warn(
+        self.log.warning(
             'Failed to find and match task details to a pod; labels: %s',
             labels
         )
@@ -682,7 +688,7 @@ class KubernetesExecutor(BaseExecutor, LoggingMixin):
             )
             kwargs = dict(label_selector=dict_string)
             if self.kube_config.kube_client_request_args:
-                for key, value in self.kube_config.kube_client_request_args.iteritems():
+                for key, value in self.kube_config.kube_client_request_args.items():
                     kwargs[key] = value
             pod_list = self.kube_client.list_namespaced_pod(
                 self.kube_config.kube_namespace, **kwargs)
@@ -796,6 +802,10 @@ class KubernetesExecutor(BaseExecutor, LoggingMixin):
                 except ApiException as e:
                     self.log.warning('ApiException when attempting to run task, re-queueing. '
                                      'Message: %s' % json.loads(e.body)['message'])
+                    self.task_queue.put(task)
+                except HTTPError as e:
+                    self.log.warning('HTTPError when attempting to run task, re-queueing. '
+                                     'Exception: %s', str(e))
                     self.task_queue.put(task)
                 finally:
                     self.task_queue.task_done()
