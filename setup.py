@@ -263,13 +263,11 @@ all_dbs = postgres + mysql + hive + mssql + hdfs + vertica + cloudant + druid + 
 devel = [
     'beautifulsoup4~=4.7.1',
     'click==6.7',
-    'contextdecorator;python_version<"3.4"',
     'flake8>=3.6.0',
     'flake8-colors',
     'freezegun',
     'ipdb',
     'jira',
-    'mock;python_version<"3.3"',
     'mongomock',
     'moto==1.3.5',
     'nose',
